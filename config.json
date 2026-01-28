@@ -1,4 +1,4 @@
 {
-    "warning_threshold": "80",
-    "auto_free_interval": "1"
+    "warning_threshold": "75",
+    "auto_free_interval": "30"
 }
