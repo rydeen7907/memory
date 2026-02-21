@@ -14,7 +14,9 @@ class UIBuilder:
         # スタイルを定義して点滅エフェクトに備える
         s = ttk.Style()
         s.configure("Flash.TFrame", background="lightblue")
+        s.configure("Flash.TLabel", background="lightblue")
         s.configure("Warning.TFrame", background="tomato")
+        s.configure("Warning.TLabel", background="tomato")
 
         app.main_frame = ttk.Frame(app.root, padding="10")
         app.main_frame.pack(fill=tk.BOTH, expand=True)
@@ -28,36 +30,6 @@ class UIBuilder:
         app.memory_progress = ttk.Progressbar(app.main_frame, orient="horizontal", length=300, mode="determinate")
         app.memory_progress.pack(pady=5)
         
-        # --- CPU情報表示エリア ---
-        app.cpu_label = ttk.Label(app.main_frame, text="CPU使用率: ...", font=("Helvetica", 12))
-        app.cpu_label.pack(pady=(5, 0), anchor="w")
-        app.cpu_progress = ttk.Progressbar(app.main_frame, orient="horizontal", length=300, mode="determinate")
-        app.cpu_progress.pack(pady=5)
-
-        # --- グラフ表示エリア ---
-        graph_button = ttk.Button(app.main_frame, text="リソースグラフを表示", command=app.open_graph_window)
-        graph_button.pack(pady=5, fill=tk.X)
-
-        # --- 上位プロセス表示エリア ---
-        process_frame = ttk.LabelFrame(app.main_frame, text="メモリ使用量トップ3")
-        process_frame.pack(pady=5, fill=tk.X)
-        
-        app.process_labels = []
-        for i in range(3):
-            lbl = ttk.Label(process_frame, text=f"{i+1}. ---", font=("Helvetica", 9))
-            lbl.pack(anchor="w", padx=5, pady=1)
-            app.process_labels.append(lbl)
-
-        # --- CPU上位プロセス表示エリア ---
-        cpu_process_frame = ttk.LabelFrame(app.main_frame, text="CPU使用率トップ3")
-        cpu_process_frame.pack(pady=5, fill=tk.X)
-        
-        app.cpu_process_labels = []
-        for i in range(3):
-            lbl = ttk.Label(cpu_process_frame, text=f"{i+1}. ---", font=("Helvetica", 9))
-            lbl.pack(anchor="w", padx=5, pady=1)
-            app.cpu_process_labels.append(lbl)
-
         # --- 手動解放エリア ---
         manual_free_button = ttk.Button(app.main_frame, text="今すぐメモリを解放", command=app.free_memory)
         manual_free_button.pack(pady=(10, 5), fill=tk.X)

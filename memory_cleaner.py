@@ -7,22 +7,21 @@ import json
 import threading # 非同期処理用
 import pystray # トレイアイコン用
 import sys
-import os
+import os # OS操作用
+import os_utils # OS固有のユーティリティ関数
 from tkinter import ttk, messagebox
-from PIL import Image, ImageDraw
-from collections import deque 
+from PIL import Image, ImageDraw # アイコン画像の生成用
 # --- 自作モジュール ---
-from graph_monitor import GraphWindow
-from process_monitor import ProcessMonitor
-from settings_window import SettingsWindow
-from tray_manager import TrayManager
-from memory_cleaner_logic import MemoryCleanerLogic
-from startup_manager import StartupManager
-from config_manager import ConfigManager
-from ui_builder import UIBuilder
-from auto_free_scheduler import AutoFreeScheduler
-import os_utils
-from icon_data import APP_ICON_NORMAL, APP_ICON_WARNING, APP_ICON_CAUTION
+from settings_window import SettingsWindow # 設定ウィンドウクラス
+from tray_manager import TrayManager # トレイアイコン管理クラス
+from memory_cleaner_logic import MemoryCleanerLogic # メモリ解放ロジッククラス
+from startup_manager import StartupManager # スタートアップ管理クラス
+from config_manager import ConfigManager # 設定管理クラス
+from ui_builder import UIBuilder # UI構築クラス
+from auto_free_scheduler import AutoFreeScheduler # 定期解放スケジューラ
+from icon_data import APP_ICON_NORMAL, APP_ICON_WARNING, APP_ICON_CAUTION # アイコンデータ
+
+APP_VERSION = "1.5.0"
 
 
 class MemoryCleanerApp:
@@ -31,8 +30,9 @@ class MemoryCleanerApp:
     """
     def __init__(self, root):
         self.root = root
+        self.version = APP_VERSION
         self.root.title("メモリ解放ツール")
-        self.root.geometry("350x475")
+        self.root.geometry("350x200")
         self.root.resizable(False, False)
 
         # アイコン設定
@@ -47,18 +47,17 @@ class MemoryCleanerApp:
         self.is_warning_state = False
         self.settings_win = None # 設定ウィンドウのインスタンス
         self.topmost_var = tk.BooleanVar(value=False) # 最前面表示フラグ
-        self.graph_window = None # グラフウィンドウのインスタンス
         self.startup_var = tk.BooleanVar(value=False) # スタートアップ登録フラグ
         self.start_minimized_var = tk.BooleanVar(value=False) # 最小化起動フラグ
         self.warning_threshold_var = tk.StringVar(value="80")  # デフォルトの警告閾値
         self.interval_var = tk.StringVar(value="1") # 定期解放の間隔
+        self.shortcut_var = tk.StringVar(value="") # ショートカットキー
+        self.current_shortcut = None # 現在適用されているショートカットキー
+        self.exclusion_list = [] # 除外プロセスリスト
+        self.flash_color_var = tk.StringVar(value="lightblue") # 点滅色
+        self.warning_color_var = tk.StringVar(value="tomato") # 警告色
 
         self.current_mem_percent = 0 # 現在のメモリ使用率
-        self.memory_history = deque([0]*60, maxlen=60) # 履歴データ(60秒分)
-        self.cpu_history = deque([0]*60, maxlen=60) # CPU履歴データ
-        self.process_monitor = ProcessMonitor() # プロセス監視用クラス
-        self.top_procs_data = ([], []) # (mem_procs, cpu_procs)
-        self._top_procs_thread = None # 上位プロセス取得スレッド
 
         self.tray_manager = TrayManager(self) # トレイアイコン管理クラス
         self.cleaner_logic = MemoryCleanerLogic() # メモリ解放ロジッククラス
@@ -69,6 +68,8 @@ class MemoryCleanerApp:
  
         self.config_manager.load() # 設定を読み込む
         self.ui_builder.build(self) # GUIのウィジェットをセットアップ
+        self.update_flash_style() # 点滅色を適用
+        self.update_warning_style() # 警告色を適用
         self.check_startup_status() # スタートアップ状態を確認
         self.update_memory_info() # メモリ情報の定期更新を開始
 
@@ -89,13 +90,6 @@ class MemoryCleanerApp:
         except Exception:
             pass
         
-    def open_graph_window(self):
-        """グラフウィンドウを開く"""
-        if self.graph_window is None or not self.graph_window.winfo_exists():
-            self.graph_window = GraphWindow(self.root)
-        else:
-            self.graph_window.lift()
-
     def open_settings_window(self):
         """設定ウィンドウを開く"""
         if self.settings_win is None or not self.settings_win.winfo_exists():
@@ -108,42 +102,11 @@ class MemoryCleanerApp:
         """
         メモリ使用率を定期的に取得し、GUIを更新する
         """
-        # CPU情報の取得
-        cpu_percent = psutil.cpu_percent(interval=None)
-        self.cpu_history.append(cpu_percent)
-        self.cpu_label.config(text=f"CPU使用率: {cpu_percent}%")
-        self.cpu_progress['value'] = cpu_percent
-
         mem = psutil.virtual_memory()
         mem_percent = mem.percent
         self.current_mem_percent = mem_percent
         mem_used_gb = mem.used / (1024 ** 3)
         mem_total_gb = mem.total / (1024 ** 3)
-
-        # 履歴を更新してグラフを描画
-        self.memory_history.append(mem_percent)
-        if self.graph_window and self.graph_window.winfo_exists():
-            self.graph_window.update_graph(self.memory_history, self.cpu_history)
-
-        # 上位プロセスの更新を非同期で開始
-        if self._top_procs_thread is None or not self._top_procs_thread.is_alive():
-            self._top_procs_thread = threading.Thread(target=self._update_top_procs_data, daemon=True)
-            self._top_procs_thread.start()
-
-        # UIはキャッシュされたデータで更新
-        top_mem_procs, top_cpu_procs = self.top_procs_data
-        
-        for i, proc in enumerate(top_mem_procs):
-            if i < len(self.process_labels):
-                # スレッドとUIスレッドでデータ構造が共有されるため、キーの存在を確認
-                if 'memory_info' in proc and proc['memory_info']:
-                    mem_mb = proc['memory_info'].rss / (1024 * 1024)
-                    self.process_labels[i].config(text=f"{i+1}. {proc['name']} ({mem_mb:.1f} MB)")
-
-        for i, proc in enumerate(top_cpu_procs):
-            if i < len(self.cpu_process_labels):
-                if 'cpu_percent' in proc:
-                    self.cpu_process_labels[i].config(text=f"{i+1}. {proc['name']} ({proc['cpu_percent']:.1f}%)")
 
         self.memory_label.config(text=f"メモリ使用率: {mem_percent}% ({mem_used_gb:.2f} GB / {mem_total_gb:.2f} GB)")
         self.memory_progress['value'] = mem_percent
@@ -187,18 +150,11 @@ class MemoryCleanerApp:
         # 1秒後に再度この関数を呼び出す
         self.update_job_id = self.root.after(1000, self.update_memory_info)
 
-    def _update_top_procs_data(self):
-        """別スレッドで上位プロセス情報を取得し、結果をキャッシュする"""
-        try:
-            self.top_procs_data = self.process_monitor.get_top_processes()
-        except Exception:
-            # スレッド内でエラーが発生してもアプリが落ちないようにする
-            pass
-
-    def free_memory(self, from_tray=False):
+    def free_memory(self, event=None, from_tray=False):
         """
         ガベージコレクションを実行してメモリを解放する（非同期）
         """
+        # event引数はショートカットキー(bind)からの呼び出し時に渡されるが使用しない
         self.show_status_message("メモリ解放を実行中...", "#0000ff")
         self.flash_window() # 処理開始をUIに通知
 
@@ -289,6 +245,8 @@ class MemoryCleanerApp:
         ウィンドウを点滅させ可視化
         """
         self.main_frame.config(style="Flash.TFrame")
+        self.memory_label.config(style="Flash.TLabel")
+        self.status_label.config(style="Flash.TLabel")
         # 200ミリ秒後に現状に基づいたスタイルに戻す
         self.root.after(200, self.update_background_style)
         
@@ -298,8 +256,32 @@ class MemoryCleanerApp:
         """
         if self.is_warning_state:
             self.main_frame.config(style="Warning.TFrame")
+            self.memory_label.config(style="Warning.TLabel")
+            self.status_label.config(style="Warning.TLabel")
         else:
             self.main_frame.config(style="TFrame")
+            self.memory_label.config(style="TLabel")
+            self.status_label.config(style="TLabel")
+
+    def update_flash_style(self):
+        """点滅時のスタイル（色）を更新する"""
+        color = self.flash_color_var.get()
+        s = ttk.Style()
+        try:
+            s.configure("Flash.TFrame", background=color)
+            s.configure("Flash.TLabel", background=color)
+        except Exception:
+            pass
+
+    def update_warning_style(self):
+        """警告時のスタイル（色）を更新する"""
+        color = self.warning_color_var.get()
+        s = ttk.Style()
+        try:
+            s.configure("Warning.TFrame", background=color)
+            s.configure("Warning.TLabel", background=color)
+        except Exception:
+            pass
 
     def check_minimize(self, event):
         """
@@ -337,10 +319,6 @@ class MemoryCleanerApp:
             self.root.after_cancel(self.update_job_id)
         self.auto_free_scheduler.stop() # 実行中の定期解放を停止
 
-        # グラフウィンドウが開いていれば閉じる
-        if self.graph_window and self.graph_window.winfo_exists():
-            self.graph_window.destroy()
-
         # トレイアイコンが実行中なら停止
         if self.tray_manager.is_running:
             self.tray_manager.stop()
@@ -350,6 +328,26 @@ class MemoryCleanerApp:
         # ウィンドウを破棄
         self.root.destroy()
 
+    def setup_shortcut(self):
+        """ショートカットキーを設定する"""
+        # 以前のバインドを解除
+        if self.current_shortcut:
+            try:
+                self.root.unbind(self.current_shortcut)
+            except Exception:
+                pass
+        
+        new_key = self.shortcut_var.get()
+        if new_key:
+            try:
+                self.root.bind(new_key, self.free_memory)
+                self.current_shortcut = new_key
+            except Exception:
+                # 無効なキーシーケンスの場合はクリア
+                self.shortcut_var.set("")
+                self.current_shortcut = None
+        else:
+            self.current_shortcut = None
 
 if __name__ == "__main__":
     root = tk.Tk()

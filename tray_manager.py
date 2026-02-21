@@ -46,7 +46,8 @@ class TrayManager:
     def update(self, usage_percent):
         """アイコンの画像とツールチップを更新する"""
         if self.is_running:
-            self.icon.icon = self._create_icon_image(usage_percent)
+            # 負荷軽減のため、アイコン画像の動的更新は行わない
+            # self.icon.icon = self._create_icon_image(usage_percent)
             self.icon.title = f"メモリ使用率: {usage_percent}%"
 
     def notify(self, message, title):
