@@ -62,7 +62,14 @@ class MemoryCleanerApp:
         self.tray_manager = TrayManager(self) # トレイアイコン管理クラス
         self.cleaner_logic = MemoryCleanerLogic() # メモリ解放ロジッククラス
         self.startup_manager = StartupManager() # スタートアップ管理クラス
-        self.config_manager = ConfigManager(self) # 設定管理クラス
+        
+        # EXE化対応: 実行ファイルの場所を基準にパスを設定
+        if getattr(sys, 'frozen', False):
+            base_dir = os.path.dirname(sys.executable)
+        else:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            
+        self.config_manager = ConfigManager(self, config_file=os.path.join(base_dir, "config.json")) # 設定管理クラス
         self.ui_builder = UIBuilder() # UI構築クラス
         self.auto_free_scheduler = AutoFreeScheduler(self) # 定期解放スケジューラ
  

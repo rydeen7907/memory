@@ -1,4 +1,5 @@
 import os
+import sys
 import webbrowser
 import psutil
 import tkinter as tk
@@ -229,7 +230,14 @@ class SettingsWindow(tk.Toplevel):
 
     def open_log_viewer(self):
         """ログビューアを開く"""
-        LogViewerWindow(self)
+        # EXE化対応: 実行ファイルの場所を基準にログパスを設定
+        if getattr(sys, 'frozen', False):
+            base_dir = os.path.dirname(sys.executable)
+        else:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            
+        log_path = os.path.join(base_dir, "memory_cleaner.log")
+        LogViewerWindow(self, log_file=log_path)
 
     def on_close(self):
         self.parent.settings_win = None

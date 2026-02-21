@@ -1,5 +1,6 @@
 import os
 import gc
+import sys
 import psutil
 import ctypes
 import logging
@@ -24,9 +25,15 @@ class MemoryCleanerLogic:
         # ハンドラが重複しないようにチェック
         if not self.logger.handlers:
             try:
+                # EXE化対応: 実行ファイルの場所を基準にログパスを設定
+                if getattr(sys, 'frozen', False):
+                    base_dir = os.path.dirname(sys.executable)
+                else:
+                    base_dir = os.path.dirname(os.path.abspath(__file__))
+
                 # ログローテーションを追加 (1MBで3世代まで)
                 handler = RotatingFileHandler(
-                    "memory_cleaner.log",
+                    os.path.join(base_dir, "memory_cleaner.log"),
                     maxBytes=1*1024*1024, # 1MB
                     backupCount=3,
                     encoding='utf-8'
@@ -190,7 +197,13 @@ class MemoryCleanerLogic:
             
         # ファイルを空にする
         try:
-            with open("memory_cleaner.log", "w", encoding='utf-8'):
+            if getattr(sys, 'frozen', False):
+                base_dir = os.path.dirname(sys.executable)
+            else:
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+            
+            log_path = os.path.join(base_dir, "memory_cleaner.log")
+            with open(log_path, "w", encoding='utf-8'):
                 pass
         except Exception:
             pass
